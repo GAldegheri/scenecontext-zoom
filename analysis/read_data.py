@@ -48,7 +48,8 @@ def compute_dprimes(allsubjdata):
 
 # --------------------------------------------------------------------------------------------------------
 
-def make_pretty_plot(avgdata, measure='hit', excl=True, fname=None, saveimg=False):
+def make_pretty_plot(avgdata, measure='hit', excl=True, fname=None, 
+                     cloudplot=False, saveimg=False):
     
     assert(measure in ['hit', 'dprime', 'criterion'])
     
@@ -60,9 +61,13 @@ def make_pretty_plot(avgdata, measure='hit', excl=True, fname=None, saveimg=Fals
         alldiffs.append(thisdiff)
     alldiffs = pd.DataFrame(alldiffs, columns=['difference'])
     
-    fig = plt.figure(figsize=(10,10)) # (10, 8)
+    if cloudplot:
+        fig = plt.figure(figsize=(10,10)) # (10, 8)
+        ax0 = fig.add_subplot(121)
+    else:
+        fig = plt.figure(figsize=(7,10))
+        ax0 = fig.add_subplot(111)
     
-    ax0 = fig.add_subplot(121)
     sns.barplot(x='expected', y=measure, data=avgdata, ci=68, order=[1.0, 0.0], 
                 palette='Set2', ax=ax0, errcolor='black', edgecolor='black', linewidth=2, capsize=.2)
     if measure=='hit':
@@ -87,47 +92,48 @@ def make_pretty_plot(avgdata, measure='hit', excl=True, fname=None, saveimg=Fals
     elif measure=='criterion':
         ax0.set(ylim=(0.0, 1.0))
     
-    ax1 = fig.add_subplot(122)
-    sns.violinplot(y='difference', data=alldiffs, color=".8", inner=None)
-    sns.stripplot(y='difference', data=alldiffs, jitter=0.07, ax=ax1, color='black', alpha=.5)
-    # Get mean and 95% CI:
-    meandiff = alldiffs['difference'].mean()
-    tstats = pg.ttest(alldiffs['difference'], 0.0)
-    ci95 = tstats['CI95%'][0]
-    for tick in ax1.get_xticks():
-        ax1.plot([tick-0.1, tick+0.1], [meandiff, meandiff],
-                    lw=4, color='k')
-        ax1.plot([tick, tick], [ci95[0], ci95[1]], lw=3, color='k')
-        ax1.plot([tick-0.03, tick+0.03], [ci95[0], ci95[0]], lw=3, color='k')
-        ax1.plot([tick-0.03, tick+0.03], [ci95[1], ci95[1]], lw=3, color='k')
-    ax1.axhline(0.0, linestyle='--', color='black')
-    plt.yticks(fontsize=24) 
-    if measure=='hit':
-        ax1.set_ylabel('Δ Accuracy', fontsize=30)
-        if excl:
-            ax1.set(ylim=(-0.2, 0.4))
-        else:
-            ax1.set(ylim=(-0.3, 0.4))
-    elif measure=='dprime':
-        ax1.set_ylabel('Δ d\'', fontsize=30)
-        ax1.set(ylim=(-2., 2.))
-    elif measure=='criterion':
-        ax1.set_ylabel('Δ Criterion', fontsize=30)
-        ax1.set(ylim=(-1.0, 1.25))
-    ax1.axes_style = 'white'
-    ax1.tick_params(axis='y', direction='out', color='black', length=10, width=2)
-    ax1.tick_params(axis='x', length=0)
-    ax1.spines['left'].set_linewidth(2)
-    ax1.spines['bottom'].set_linewidth(2)
-    ax1.spines['right'].set_visible(False)
-    ax1.spines['bottom'].set_visible(False)
-    ax1.spines['top'].set_visible(False)
+    if cloudplot:
+        ax1 = fig.add_subplot(122)
+        sns.violinplot(y='difference', data=alldiffs, color=".8", inner=None)
+        sns.stripplot(y='difference', data=alldiffs, jitter=0.07, ax=ax1, color='black', alpha=.5)
+        # Get mean and 95% CI:
+        meandiff = alldiffs['difference'].mean()
+        tstats = pg.ttest(alldiffs['difference'], 0.0)
+        ci95 = tstats['CI95%'][0]
+        for tick in ax1.get_xticks():
+            ax1.plot([tick-0.1, tick+0.1], [meandiff, meandiff],
+                        lw=4, color='k')
+            ax1.plot([tick, tick], [ci95[0], ci95[1]], lw=3, color='k')
+            ax1.plot([tick-0.03, tick+0.03], [ci95[0], ci95[0]], lw=3, color='k')
+            ax1.plot([tick-0.03, tick+0.03], [ci95[1], ci95[1]], lw=3, color='k')
+        ax1.axhline(0.0, linestyle='--', color='black')
+        plt.yticks(fontsize=24) 
+        if measure=='hit':
+            ax1.set_ylabel('Δ Accuracy', fontsize=30)
+            if excl:
+                ax1.set(ylim=(-0.2, 0.4))
+            else:
+                ax1.set(ylim=(-0.3, 0.4))
+        elif measure=='dprime':
+            ax1.set_ylabel('Δ d\'', fontsize=30)
+            ax1.set(ylim=(-2., 2.))
+        elif measure=='criterion':
+            ax1.set_ylabel('Δ Criterion', fontsize=30)
+            ax1.set(ylim=(-1.0, 1.25))
+        ax1.axes_style = 'white'
+        ax1.tick_params(axis='y', direction='out', color='black', length=10, width=2)
+        ax1.tick_params(axis='x', length=0)
+        ax1.spines['left'].set_linewidth(2)
+        ax1.spines['bottom'].set_linewidth(2)
+        ax1.spines['right'].set_visible(False)
+        ax1.spines['bottom'].set_visible(False)
+        ax1.spines['top'].set_visible(False)
     plt.tight_layout()
     whichprob = avgdata.p_exp[0]
     if not fname:
         fname = f'p{whichprob*100:g}_{measure}.pdf'
         if not excl:
-            fname.replace('.pdf', '_noexcl.pdf')
+            fname = fname.replace('.pdf', '_noexcl.pdf')
     if saveimg:
         if not os.path.isdir('plots'):
             os.mkdir('plots')

@@ -119,3 +119,28 @@ def cleanupdata(rawdata):
         data = pd.DataFrame(data)
 
         return data
+
+
+# --------------------------------------------------------------------------------------------------------    
+
+if __name__ == "__main__":
+    import os
+    
+    datadir = '~/Documents/OnlineExp_Analysis/data'
+    
+    allsubjdata = pd.read_csv(os.path.join(datadir, 'allsurveys.csv'))
+    
+    zoomdata = allsubjdata[allsubjdata['zoomseq']==True]
+    zoomdata = zoomdata[(zoomdata.date>=20220511)&
+                    (zoomdata.time>=1652000000000)&
+                    (zoomdata.cond_practice==False)]
+    # zoomdata = zoomdata[['scene', 'expected', 'initview', 'finalview', 
+    #                      'img_2', 'img_3', 'img_4', 
+    #                      'probe_1', 'probe_2', 'int_diff', 'p_exp',
+    #                      'response', 'corr_resp', 'hit', 'rt',
+    #                      'subject', 'date', 'time']]
+    zoomdata = zoomdata[['sequence_attention', 'object_expect',
+                         'percent_expected', 'comments', 'p_exp',
+                         'subject', 'date', 'time']]
+    
+    zoomdata.to_csv('data/allsurveys.csv', index=False)
