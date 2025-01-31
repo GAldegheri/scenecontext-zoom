@@ -33,10 +33,12 @@ def compute_dprimes(allsubjdata):
         #assert(len(thissubj)==192)
         for e in [0, 1]: # expected, unexpected
             thiscond = thissubj[thissubj['expected']==e]
-            n_resp = np.sum(~pd.isna(thiscond.response)) # n. of actually given responses
+            #n_resp = np.sum(~pd.isna(thiscond.response)) # n. of actually given responses
+            n_signal = len(thiscond[(thiscond['corr_resp']=='j')&(~pd.isna(thiscond.response))])
+            n_noise = len(thiscond[(thiscond['corr_resp']=='f')&(~pd.isna(thiscond.response))])
             # Log-linear correction (Hautus 1995)
-            hitP = (len(thiscond[(thiscond.hit==1)&(thiscond['response']=='j')]) + 0.5)/(n_resp + 1)
-            faP = (len(thiscond[(thiscond.hit==0)&(thiscond['response']=='j')]) + 0.5)/(n_resp + 1)
+            hitP = (len(thiscond[(thiscond.hit==1)&(thiscond['response']=='j')]) + 0.5)/(n_signal + 1)
+            faP = (len(thiscond[(thiscond.hit==0)&(thiscond['response']=='j')]) + 0.5)/(n_noise + 1)
             hitZ = norm.ppf(hitP)
             faZ = norm.ppf(faP)
             dprime = hitZ-faZ
@@ -88,9 +90,10 @@ def make_pretty_plot(avgdata, measure='hit', excl=True, fname=None,
     if measure=='hit':
         ax0.set(ylim=(0.5, 0.75))
     elif measure=='dprime':
-        ax0.set(ylim=(0.0, 1.0))
+        ax0.set(ylim=(0.0, 1.4))
     elif measure=='criterion':
-        ax0.set(ylim=(0.0, 1.0))
+        ax0.set(ylim=(-0.1, 0.4))
+        ax0.axhline(0.0, color='black', linewidth=2, linestyle='--')
     
     if cloudplot:
         ax1 = fig.add_subplot(122)
