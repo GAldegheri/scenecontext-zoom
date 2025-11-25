@@ -3,9 +3,135 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pingouin as pg
-from scipy.stats import binom_test, norm
+from scipy.stats import binomtest, norm
 from itertools import product
 import os
+
+import rpy2.robjects as ro
+from rpy2.robjects import pandas2ri, numpy2ri
+from rpy2.robjects.conversion import localconverter
+
+# --------------------------------------------------------------------------------------------------------
+
+def prepare_data_for_glmm(allsubjdata):
+    
+    # remove trials with missing responses
+    allsubjdata = allsubjdata.dropna(subset = ['response'])
+    
+    # label trials as same or different based on the correct response key
+    allsubjdata['sameordiff'] = allsubjdata['corr_resp'].map({'f': 'same', 'j': 'different'})
+    
+    # code 'same' responses as 0 and 'different' as 1
+    allsubjdata['response_samediff'] = allsubjdata['response'].map({'f': 0, 'j': 1})
+    
+    # set stimulus intensity difference to 0 on 'same' trials
+    allsubjdata.loc[allsubjdata['sameordiff']=='same','int_diff'] = 0.0
+    allsubjdata['abs_diff'] = allsubjdata['int_diff'].abs() 
+    
+    # make 'expected' and 'p_exp' categorical variables
+    allsubjdata['expected'] = allsubjdata['expected'].astype('category')
+    allsubjdata['p_exp'] = (allsubjdata['p_exp'] * 100).astype(int).astype('category')
+    
+    return allsubjdata
+
+# --------------------------------------------------------------------------------------------------------
+
+def glmm_analysis_r(allsubjdata):
+    
+    # move data to R
+    with localconverter(ro.default_converter + pandas2ri.converter + numpy2ri.converter):
+        ro.globalenv['r_data'] = allsubjdata
+        
+    # run the analysis in R
+    ro.r('''
+        # Load library inside R
+        library(lme4)
+        library(emmeans)
+        
+        # Make p_exp a factor with "75" group as reference
+        r_data$p_exp <- as.factor(r_data$p_exp)
+        r_data$p_exp <- relevel(r_data$p_exp, ref = "75")
+        
+        # Fit the model
+        # We use the dataframe 'r_data' we just pushed
+        model <- glmer(response_samediff ~ abs_diff * expected * p_exp + 
+                    (1 + abs_diff * expected | subject),
+                    data = r_data,
+                    family = binomial(link = "probit"),
+                    # Control settings often help with complex models
+                    control = glmerControl(optimizer = "bobyqa"))
+        
+        # Extract the summary and coefficient matrix
+        # We save these to R variables 'summ' and 'coef_mat'
+        summ <- summary(model)
+        coef_mat <- coef(summ)
+        
+        # Get sensitivity (Slopes of abs_diff)
+        sens_trends <- emtrends(model, ~ expected * p_exp, var = "abs_diff")
+        sens_df <- as.data.frame(sens_trends)
+        
+        # Get criterion (intercept/bias)
+        # criterion c = -1 * (Probit Score)
+        crit_means <- emmeans(model, ~ expected * p_exp, at = list(abs_diff = 0))
+        crit_df = as.data.frame(crit_means)
+        
+        # Get sensitivity contrasts
+        sens_contrasts <- pairs(sens_trends, simple = "expected")
+        
+        # Get criterion contrasts
+        crit_contrasts <- pairs(crit_means, simple = "expected")
+        
+        # The coef() function extracts the sum of (Fixed Effects + Random Effects) 
+        # for every subject.
+        subject_coefs <- coef(model)$subject
+    ''')
+    
+    # retrieve the results back into Python
+    with localconverter(ro.default_converter + pandas2ri.converter + numpy2ri.converter):
+        # A. Get the numbers (This becomes a numpy array automatically)
+        data_array = ro.globalenv['coef_mat']
+        
+        # B. Get the names explicitly as Python lists
+        # We call R functions 'rownames' and 'colnames' on the object inside R
+        row_names = list(ro.r('rownames(coef_mat)'))
+        col_names = list(ro.r('colnames(coef_mat)'))
+        
+        sensitivity_plot_data = ro.globalenv['sens_df']
+        sens_row_names = list(ro.r('rownames(sens_df)'))
+        sens_col_names = list(ro.r('colnames(sens_df)'))
+        
+        criterion_plot_data = ro.globalenv['crit_df']
+        crit_row_names = list(ro.r('rownames(crit_df)'))
+        crit_col_names = list(ro.r('colnames(crit_df)'))
+        
+        subj_df = ro.globalenv['subject_coefs']
+        subj_row_names = list(ro.r('rownames(subject_coefs)'))
+        subj_col_names = list(ro.r('colnames(subject_coefs)'))
+
+    # 4. Construct the DataFrame manually
+    results_df = pd.DataFrame(data_array, 
+                            index=row_names, 
+                            columns=col_names)
+
+    sensitivity_plot_data = pd.DataFrame(sensitivity_plot_data,
+                                        index=sens_row_names,
+                                        columns=sens_col_names)
+    criterion_plot_data = pd.DataFrame(criterion_plot_data,
+                                    index=crit_row_names,
+                                    columns=crit_col_names)
+    subj_df = pd.DataFrame(subj_df,
+                        index=subj_row_names,
+                        columns=subj_col_names)
+
+    sensitivity_plot_data.rename(columns={'abs_diff.trend': 'Sensitivity_Slope', 
+                                        'SE': 'Standard_Error'}, inplace=True)
+
+    # Criterion: The column 'emmean' is the Intercept. 
+    # We must flip the sign to get 'c'
+    criterion_plot_data['Criterion_c'] = -1 * criterion_plot_data['emmean']
+    criterion_plot_data['Standard_Error'] = criterion_plot_data['SE'] 
+    
+    return results_df, sensitivity_plot_data, criterion_plot_data, subj_df
 
 # --------------------------------------------------------------------------------------------------------
 
@@ -151,8 +277,8 @@ def subject_exclusion(allsubjdata):
     remove_subjs = []
     
     for s in list(allsubjdata.subject.unique()):
-        k = allsubjdata[allsubjdata['subject']==s].hit.sum()
-        if binom_test(k, n, p=0.5, alternative='greater')>0.05:
+        k = allsubjdata[allsubjdata['subject']==s].hit.sum().astype('int')
+        if binomtest(k, n, p=0.5, alternative='greater').pvalue>0.05:
             remove_subjs.append(s)
     
     return remove_subjs
